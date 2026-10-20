@@ -1,4 +1,4 @@
-package com.marketplace.userservice;
+package com.marketplace.userservice.service;
 
 import com.marketplace.userservice.dto.CreateUserRequest;
 import com.marketplace.userservice.dto.UpdateUserRequest;
@@ -7,7 +7,6 @@ import com.marketplace.userservice.entity.User;
 import com.marketplace.userservice.exception.UserNotFoundException;
 import com.marketplace.userservice.mapper.UserMapper;
 import com.marketplace.userservice.repository.UserRepository;
-import com.marketplace.userservice.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;

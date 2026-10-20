@@ -21,5 +21,3 @@ spring:
 
   cache:
     type: redis
-
-
