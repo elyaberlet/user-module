@@ -55,7 +55,7 @@ public class CardService {
     @Cacheable(value = "cards", key = "#cardId")
     public CardResponseDto getCardById(Long cardId) {
         PaymentCard card = paymentCardRepository.findById(cardId)
-                .orElseThrow(() -> new RuntimeException("Card not found with id: " + cardId));
+                .orElseThrow(() -> new UserNotFoundException("Card not found with id: " + cardId));
         return cardMapper.toResponseDto(card);
     }
 
@@ -63,7 +63,7 @@ public class CardService {
     @CacheEvict(value = "cards", key = "#cardId")
     public CardResponseDto updateCard(Long cardId, UpdateCardRequest request) {
         PaymentCard card = paymentCardRepository.findById(cardId)
-                .orElseThrow(() -> new RuntimeException("Card not found with id: " + cardId));
+                .orElseThrow(() -> new UserNotFoundException("Card not found with id: " + cardId));
 
         cardMapper.updateEntity(request, card);
         PaymentCard updated = paymentCardRepository.save(card);
@@ -74,7 +74,7 @@ public class CardService {
     @CacheEvict(value = "cards", key = "#cardId")
     public void deleteCard(Long cardId) {
         paymentCardRepository.findById(cardId)
-                .orElseThrow(() -> new RuntimeException("Card not found with id: " + cardId));
+                .orElseThrow(() -> new UserNotFoundException("Card not found with id: " + cardId));
         paymentCardRepository.updateActiveStatus(cardId, false);
     }
 }
