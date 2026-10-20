@@ -34,8 +34,10 @@ jobs:
       - name: Check out the code
         uses: actions/checkout@v4
         with:
-          # SonarQube needs the full history to find new code and blame information.
           fetch-depth: 0
+
+      - name: Make mvnw executable
+        run: chmod +x ./mvnw
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -47,12 +49,9 @@ jobs:
       - name: Build
         run: ./mvnw -B -ntp -DskipTests package
 
-      # All tests, including the integration tests: Testcontainers starts PostgreSQL and Redis
-      # in Docker, which is available on GitHub-hosted runners.
       - name: Test
         run: ./mvnw -B -ntp test
 
-      # Code analysis with SonarQube Cloud
       - name: Code analysis (SonarQube Cloud)
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop'
         env:
