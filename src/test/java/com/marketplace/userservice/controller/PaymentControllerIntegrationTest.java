@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -27,6 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @Import(RedisTestConfig.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentControllerIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
@@ -133,7 +135,6 @@ class PaymentControllerIntegrationTest extends BaseIntegrationTest {
                     .andExpect(status().isCreated());
         }
 
-        // Пытаемся создать 6-ю карту - должно быть отказано
         CreateCardRequest request = CreateCardRequest.builder()
                 .number("1234567890123459")
                 .holder("TEST USER 5")
@@ -151,9 +152,8 @@ class PaymentControllerIntegrationTest extends BaseIntegrationTest {
     @Order(6)
     void shouldDeleteCardSuccessfully() throws Exception {
         mockMvc.perform(delete("/api/cards/" + createdCardId))
-                .andExpect(status().isOk());
+                .andExpect(status().isNoContent());
 
-        // Проверяем, что карта деактивирована
         mockMvc.perform(get("/api/cards/" + createdCardId))
                 .andExpect(status().isNotFound());
     }
