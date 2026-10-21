@@ -1,15 +1,13 @@
 package com.marketplace.userservice.service;
 
-import com.marketplace.userservice.dto.CreateUserRequest;
-import com.marketplace.userservice.dto.UpdateUserRequest;
-import com.marketplace.userservice.dto.UserResponseDto;
+import com.marketplace.userservice.dto.*;
 import com.marketplace.userservice.entity.User;
+import com.marketplace.userservice.exception.EmailAlreadyExistsException;
 import com.marketplace.userservice.exception.UserNotFoundException;
 import com.marketplace.userservice.mapper.UserMapper;
 import com.marketplace.userservice.repository.UserRepository;
 import com.marketplace.userservice.specification.UserSpecification;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
@@ -20,56 +18,62 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@Slf4j
 @RequiredArgsConstructor
 public class UserService {
-
     private final UserRepository userRepository;
     private final UserMapper userMapper;
 
     @Transactional
-    public UserResponseDto createUser(CreateUserRequest request) { // Исправлена опечатка: requset -> request
+    @CacheEvict(cacheNames = "users", allEntries = true)
+    public UserResponseDto createUser(CreateUserRequest request) {
+        if (userRepository.existsByEmail(request.email())) throw new EmailAlreadyExistsException(request.email());
         User user = userMapper.toEntity(request);
-        User saved = userRepository.save(user);
-        return userMapper.toResponseDto(saved);
+        return userMapper.toDto(userRepository.save(user));
     }
 
+    @Transactional(readOnly = true)
     public Page<UserResponseDto> getUsers(String name, String surname, Pageable pageable) {
-        Specification<User> spec = UserSpecification.filterByNameAndSurname(name, surname);
-        Page<User> users = userRepository.findAll(spec, pageable);
-        return users.map(userMapper::toResponseDto);
+        Specification<User> spec = Specification.where(UserSpecification.activeOnly())
+                .and(UserSpecification.hasName(name))
+                .and(UserSpecification.hasSurname(surname));
+        return userRepository.findAll(spec, pageable).map(userMapper::toDto);
     }
 
-    @Cacheable(value = "users", key = "#userId")
+    @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "users", key = "#userId")
     public UserResponseDto getUserById(Long userId) {
-        User user = userRepository.findByIdAndActiveTrue(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
-        return userMapper.toResponseDto(user);
+        User user = userRepository.findActiveWithCardsById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        return userMapper.toDto(user);
     }
 
     @Transactional
-    @CachePut(value = "users", key = "#userId") // <-- ИСПРАВЛЕНО: было #id, стало #userId
+    @CachePut(cacheNames = "users", key = "#userId")
     public UserResponseDto updateUser(Long userId, UpdateUserRequest request) {
         User user = userRepository.findByIdAndActiveTrue(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        if (request.email() != null && !request.email().equalsIgnoreCase(user.getEmail())
+                && userRepository.existsByEmail(request.email())) {
+            throw new EmailAlreadyExistsException(request.email());
+        }
         userMapper.updateEntity(request, user);
-        User updated = userRepository.save(user);
-        return userMapper.toResponseDto(updated);
+        return userMapper.toDto(userRepository.save(user));
     }
 
     @Transactional
-    @CacheEvict(value = "users", key = "#userId") // <-- ИСПРАВЛЕНО: было #id, стало #userId
+    @org.springframework.cache.annotation.Caching(evict = {
+            @CacheEvict(cacheNames = "users", allEntries = true),
+            @CacheEvict(cacheNames = "cards", allEntries = true)
+    })
     public void deleteUser(Long userId) {
-        User user = userRepository.findByIdAndActiveTrue(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
-        userRepository.updateActiveStatus(userId, false);
+        User user = userRepository.findById(userId).orElseThrow(() -> new UserNotFoundException(userId));
+        userRepository.delete(user);
     }
 
     @Transactional
-    @CacheEvict(value = "users", key = "#userId") // <-- ИСПРАВЛЕНО: было #id, стало #userId
-    public void updateUserStatus(Long userId, Boolean active) {
-        userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
+    @CacheEvict(cacheNames = "users", key = "#userId")
+    public void updateUserStatus(Long userId, boolean active) {
+        if (!userRepository.existsById(userId)) throw new UserNotFoundException(userId);
         userRepository.updateActiveStatus(userId, active);
     }
 }

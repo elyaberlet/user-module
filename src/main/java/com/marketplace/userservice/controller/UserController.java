@@ -8,46 +8,42 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+
+import java.net.URI;
 
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/users")
+@RequiredArgsConstructor
 public class UserController {
-
     private final UserService userService;
 
     @PostMapping
     public ResponseEntity<UserResponseDto> createUser(@Valid @RequestBody CreateUserRequest request) {
         UserResponseDto created = userService.createUser(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}").buildAndExpand(created.id()).toUri();
+        return ResponseEntity.created(location).body(created);
     }
 
     @GetMapping
     public ResponseEntity<Page<UserResponseDto>> getUsers(
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String surname,
-            Pageable pageable
-    ) {
-        Page<UserResponseDto> users = userService.getUsers(name, surname, pageable);
-        return ResponseEntity.ok(users);
+            @PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        return ResponseEntity.ok(userService.getUsers(name, surname, pageable));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponseDto> getUserById(@PathVariable Long id) {
-        UserResponseDto user = userService.getUserById(id);
-        return ResponseEntity.ok(user);
+    public ResponseEntity<UserResponseDto> getUser(@PathVariable Long id) {
+        return ResponseEntity.ok(userService.getUserById(id));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<UserResponseDto> updateUser(
-            @PathVariable Long id,
-            @Valid @RequestBody UpdateUserRequest request
-    ) {
-        UserResponseDto updated = userService.updateUser(id, request);
-        return ResponseEntity.ok(updated);
+    public ResponseEntity<UserResponseDto> updateUser(@PathVariable Long id, @Valid @RequestBody UpdateUserRequest request) {
+        return ResponseEntity.ok(userService.updateUser(id, request));
     }
 
     @DeleteMapping("/{id}")
@@ -57,10 +53,7 @@ public class UserController {
     }
 
     @PatchMapping("/{id}/status")
-    public ResponseEntity<Void> updateUserStatus(
-            @PathVariable Long id,
-            @RequestParam Boolean active
-    ) {
+    public ResponseEntity<Void> updateStatus(@PathVariable Long id, @RequestParam boolean active) {
         userService.updateUserStatus(id, active);
         return ResponseEntity.noContent().build();
     }

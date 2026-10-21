@@ -1,17 +1,21 @@
 package com.marketplace.userservice.repository;
 
 import com.marketplace.userservice.entity.PaymentCard;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
+
 public interface PaymentCardRepository extends JpaRepository<PaymentCard, Long>, JpaSpecificationExecutor<PaymentCard> {
+    List<PaymentCard> findByUser_IdAndActiveTrue(Long userId);
 
-    @Modifying
-    @Query("UPDATE PaymentCard c SET c.active = :active WHERE c.id = :id")
-    void updateActiveStatus(@Param("id") Long id, @Param("active") Boolean active);
+    Page<PaymentCard> findByUser_IdAndActiveTrue(Long userId, Pageable pageable);
 
-    long countByUserIdAndActiveTrue(Long userId);
+    long countByUser_IdAndActiveTrue(Long userId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update PaymentCard c set c.active = :active, c.updatedAt = CURRENT_TIMESTAMP where c.id = :id")
+    int updateActiveStatus(@Param("id") Long id, @Param("active") boolean active);
 }

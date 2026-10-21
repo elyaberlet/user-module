@@ -1,49 +1,60 @@
 package com.marketplace.userservice.exception.handler;
 
 import com.marketplace.userservice.exception.CardLimitExceededException;
+import com.marketplace.userservice.exception.CardNotFoundException;
+import com.marketplace.userservice.exception.EmailAlreadyExistsException;
 import com.marketplace.userservice.exception.UserNotFoundException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.FieldError;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
-    @ExceptionHandler
-    public ResponseEntity<Map<String, Object>> handleUserNotFound(UserNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(Map.of("timestamp", LocalDateTime.now(), "status", 404, "error", "Not Found", "message", ex.getMessage()));
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<Map<String, String>> userNotFound(UserNotFoundException ex) {
+        return error(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
-    @ExceptionHandler
-    public ResponseEntity<Map<String, Object>> handleCardLimit(CardLimitExceededException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("timestamp", LocalDateTime.now(), "status", 400, "error", "Bad Request", "message", ex.getMessage()));
+    @ExceptionHandler(CardNotFoundException.class)
+    public ResponseEntity<Map<String, String>> cardNotFound(CardNotFoundException ex) {
+        return error(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
-    @ExceptionHandler
-    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-        var errors = ex.getBindingResult().getFieldErrors().stream()
-                .collect(Collectors.toMap(
-                        FieldError::getField,
-                        FieldError::getDefaultMessage,
-                        (existingMessage, newMessage) -> existingMessage // <-- ДОБАВИТЬ ЭТУ СТРОКУ (разрешает дубликаты)
-                ));
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("timestamp", LocalDateTime.now(), "status", 400, "error", "Validation Failed", "messages", errors));
+    @ExceptionHandler(CardLimitExceededException.class)
+    public ResponseEntity<Map<String, String>> cardLimit(CardLimitExceededException ex) {
+        return error(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
-    @ExceptionHandler
-    public ResponseEntity<Map<String, Object>> handleGeneral(Exception ex) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("timestamp", LocalDateTime.now(), "status", 500, "error", "Internal Server Error", "message", ex.getMessage()));
+    @ExceptionHandler(EmailAlreadyExistsException.class)
+    public ResponseEntity<Map<String, String>> emailExists(EmailAlreadyExistsException ex) {
+        return error(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> validation(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        ex.getBindingResult().getFieldErrors().forEach(e -> errors.putIfAbsent(e.getField(), e.getDefaultMessage()));
+        return ResponseEntity.badRequest().body(errors);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> integrity(DataIntegrityViolationException ex) {
+        return error(HttpStatus.CONFLICT, "Database constraint violated");
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, String>> unreadable(HttpMessageNotReadableException ex) {
+        return error(HttpStatus.BAD_REQUEST, "Malformed request body or invalid field format");
+    }
+
+    private ResponseEntity<Map<String, String>> error(HttpStatus status, String message) {
+        return ResponseEntity.status(status).body(Map.of("error", message));
     }
 }

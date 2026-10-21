@@ -3,20 +3,22 @@ package com.marketplace.userservice.specification;
 import com.marketplace.userservice.entity.User;
 import org.springframework.data.jpa.domain.Specification;
 
-public class UserSpecification {
+public final class UserSpecification {
+    private UserSpecification() {}
 
     public static Specification<User> hasName(String name) {
-        return (root, query, criteriaBuilder) ->
-                name == null ? null : criteriaBuilder.equal(root.get("name"), name);
+        return (root, query, cb) -> name == null || name.isBlank()
+                ? cb.conjunction()
+                : cb.like(cb.lower(root.get("name")), "%" + name.toLowerCase() + "%");
     }
 
     public static Specification<User> hasSurname(String surname) {
-        return (root, query, criteriaBuilder) ->
-                surname == null ? null : criteriaBuilder.equal(root.get("surname"), surname);
+        return (root, query, cb) -> surname == null || surname.isBlank()
+                ? cb.conjunction()
+                : cb.like(cb.lower(root.get("surname")), "%" + surname.toLowerCase() + "%");
     }
 
-    public static Specification<User> filterByNameAndSurname(String name, String surname) {
-        return Specification.where(hasName(name))
-                .and(hasSurname(surname));
+    public static Specification<User> activeOnly() {
+        return (root, query, cb) -> cb.isTrue(root.get("active"));
     }
 }
