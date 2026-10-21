@@ -1,30 +1,27 @@
+
 package com.marketplace.userservice.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.marketplace.userservice.dto.CreateCardRequest;
 import com.marketplace.userservice.dto.CreateUserRequest;
-import com.marketplace.userservice.dto.UpdateCardRequest;
-import com.marketplace.userservice.dto.UserResponseDto;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.MethodOrderer;
-import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+@SpringBootTest
 @AutoConfigureMockMvc
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class PaymentControllerIntegrationTest extends BaseIntegrationTest {
+@ActiveProfiles("test")
+@Transactional
+class PaymentControllerIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -32,148 +29,159 @@ class PaymentControllerIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    private static Long testUserId;
-    private static Long createdCardId;
+    private long createUser() throws Exception {
+        String userJson = objectMapper.writeValueAsString(
+                new CreateUserRequest(
+                        "Ivan",
+                        "Ivanov",
+                        LocalDate.of(1995, 5, 10),
+                        "card-owner@example.com"
+                )
+        );
 
-    @BeforeAll
-    void setUp() throws Exception {
-        CreateUserRequest userRequest = CreateUserRequest.builder()
-                .name("Тест")
-                .surname("Тестов")
-                .email("test@test.com")
-                .birthDate(LocalDate.of(1990, 1, 1))
-                .build();
-
-        MvcResult result = mockMvc.perform(post("/api/users")
+        String response = mockMvc.perform(post("/api/users")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(userRequest)))
+                        .content(userJson))
                 .andExpect(status().isCreated())
-                .andReturn();
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
-        UserResponseDto user = objectMapper.readValue(
-                result.getResponse().getContentAsString(), UserResponseDto.class);
-        testUserId = user.getId();
+        return objectMapper.readTree(response).get("id").asLong();
     }
 
-    @Test
-    @Order(1)
-    void shouldCreateCardSuccessfully() throws Exception {
-        CreateCardRequest request = CreateCardRequest.builder()
-                .number("1234567890123456")
-                .holder("TEST USER")
-                .expirationDate(LocalDate.now().plusYears(2))
-                .build();
+    private long createCard(long userId, String number) throws Exception {
+        String cardJson = """
+                {
+                  "number": "%s",
+                  "holder": "IVAN IVANOV",
+                  "expirationDate": "%s"
+                }
+                """.formatted(number, LocalDate.now().plusYears(2));
 
-        MvcResult result = mockMvc.perform(post("/api/users/" + testUserId + "/cards")
+        String response = mockMvc.perform(post("/api/users/{userId}/cards", userId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                        .content(cardJson))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.number").value("1234567890123456"))
-                .andExpect(jsonPath("$.holder").value("TEST USER"))
+                .andExpect(header().exists("Location"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        return objectMapper.readTree(response).get("id").asLong();
+    }
+
+
+    @Test
+    void createCard_shouldReturn201AndLocation() throws Exception {
+        long userId = createUser();
+
+        String cardJson = """
+            {
+              "number": "1234567812345678",
+              "holder": "IVAN IVANOV",
+              "expirationDate": "%s"
+            }
+            """.formatted(LocalDate.now().plusYears(2));
+
+        String response = mockMvc.perform(post("/api/users/{userId}/cards", userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cardJson))
+                .andExpect(status().isCreated())
+                .andExpect(header().exists("Location"))
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.number").value("1234567812345678"))
+                .andExpect(jsonPath("$.holder").value("IVAN IVANOV"))
                 .andExpect(jsonPath("$.active").value(true))
-                .andReturn();
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
-        createdCardId = objectMapper.readValue(
-                result.getResponse().getContentAsString(),
-                com.marketplace.userservice.dto.CardResponseDto.class).getId();
-        assertNotNull(createdCardId);
-    }
+        long cardId = objectMapper.readTree(response).get("id").asLong();
 
-    @Test
-    @Order(2)
-    void shouldGetCardById() throws Exception {
-        mockMvc.perform(get("/api/cards/" + createdCardId))
+        mockMvc.perform(get("/api/cards/{cardId}", cardId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(createdCardId))
-                .andExpect(jsonPath("$.number").value("1234567890123456"));
+                .andExpect(jsonPath("$.id").value(cardId));
+    }
+
+
+    @Test
+    void createCard_shouldReturn400_whenRequestIsInvalid() throws Exception {
+        long userId = createUser();
+
+        String invalidJson = """
+                {
+                  "number": "123",
+                  "holder": "",
+                  "expirationDate": "2020-01-01"
+                }
+                """;
+
+        mockMvc.perform(post("/api/users/{userId}/cards", userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(invalidJson))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
-    @Order(3)
-    void shouldGetCardsByUserId() throws Exception {
-        mockMvc.perform(get("/api/users/" + testUserId + "/cards")
+    void getCard_shouldReturn200_whenCardExists() throws Exception {
+        long userId = createUser();
+        long cardId = createCard(userId, "1111222233334444");
+
+        mockMvc.perform(get("/api/cards/{cardId}", cardId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(cardId))
+                .andExpect(jsonPath("$.number").value("1111222233334444"));
+    }
+
+    @Test
+    void getCards_shouldReturnPage() throws Exception {
+        long userId = createUser();
+        createCard(userId, "1111222233334444");
+        createCard(userId, "2222333344445555");
+
+        mockMvc.perform(get("/api/users/{userId}/cards", userId)
                         .param("page", "0")
-                        .param("size", "10"))
+                        .param("size", "10")
+                        .param("sort", "id,asc"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray())
-                .andExpect(jsonPath("$.totalElements").value(1));
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.totalElements").value(2));
     }
 
     @Test
-    @Order(4)
-    void shouldUpdateCardSuccessfully() throws Exception {
-        UpdateCardRequest request = UpdateCardRequest.builder()
-                .holder("UPDATED HOLDER")
-                .build();
+    void updateCard_shouldReturnUpdatedCard() throws Exception {
+        long userId = createUser();
+        long cardId = createCard(userId, "1111222233334444");
 
-        mockMvc.perform(put("/api/cards/" + createdCardId)
+        String updateJson = """
+                {
+                  "number": "9999888877776666",
+                  "holder": "NEW HOLDER",
+                  "expirationDate": "%s"
+                }
+                """.formatted(LocalDate.now().plusYears(3));
+
+        mockMvc.perform(put("/api/cards/{cardId}", cardId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                        .content(updateJson))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.holder").value("UPDATED HOLDER"));
+                .andExpect(jsonPath("$.id").value(cardId))
+                .andExpect(jsonPath("$.number").value("9999888877776666"))
+                .andExpect(jsonPath("$.holder").value("NEW HOLDER"));
     }
 
     @Test
-    @Order(5)
-    void shouldEnforceCardLimit() throws Exception {
-        // Создаем еще 4 карты (итого 5)
-        for (int i = 0; i < 4; i++) {
-            CreateCardRequest request = CreateCardRequest.builder()
-                    .number("123456789012345" + (i + 2))
-                    .holder("TEST USER " + i)
-                    .expirationDate(LocalDate.now().plusYears(2))
-                    .build();
+    void deleteCard_shouldReturn204() throws Exception {
+        long userId = createUser();
+        long cardId = createCard(userId, "1111222233334444");
 
-            mockMvc.perform(post("/api/users/" + testUserId + "/cards")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(request)))
-                    .andExpect(status().isCreated());
-        }
+        mockMvc.perform(delete("/api/cards/{cardId}", cardId))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
 
-        // Пытаемся создать 6-ю карту - должно быть отказано
-        CreateCardRequest request = CreateCardRequest.builder()
-                .number("1234567890123459")
-                .holder("TEST USER 5")
-                .expirationDate(LocalDate.now().plusYears(2))
-                .build();
-
-        mockMvc.perform(post("/api/users/" + testUserId + "/cards")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("User cannot have more than 5 active cards"));
-    }
-
-    @Test
-    @Order(6)
-    void shouldDeleteCardSuccessfully() throws Exception {
-        mockMvc.perform(delete("/api/cards/" + createdCardId))
-                .andExpect(status().isOk());
-
-        // Проверяем, что карта деактивирована
-        mockMvc.perform(get("/api/cards/" + createdCardId))
+        mockMvc.perform(get("/api/cards/{cardId}", cardId))
                 .andExpect(status().isNotFound());
-    }
-
-    @Test
-    @Order(7)
-    void shouldReturn404ForNonExistentCard() throws Exception {
-        mockMvc.perform(get("/api/cards/99999"))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
-    @Order(8)
-    void shouldValidateCreateCardRequest() throws Exception {
-        CreateCardRequest invalidRequest = CreateCardRequest.builder()
-                .number("")
-                .holder("")
-                .expirationDate(LocalDate.now().minusYears(1))
-                .build();
-
-        mockMvc.perform(post("/api/users/" + testUserId + "/cards")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(invalidRequest)))
-                .andExpect(status().isBadRequest());
     }
 }

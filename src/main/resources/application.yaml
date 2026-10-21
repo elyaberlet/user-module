@@ -1,3 +1,22 @@
 spring:
+  application:
+    name: user-service
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.xml
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000
+      cache-null-values: false
+server:
+  port: 8081
