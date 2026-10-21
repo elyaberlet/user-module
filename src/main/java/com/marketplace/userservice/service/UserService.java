@@ -41,7 +41,7 @@ public class UserService {
         return users.map(userMapper::toResponseDto);
     }
 
-    @Cacheable(value = "users", key = "#id")
+    @Cacheable(value = "users", key = "#userId")
     public UserResponseDto getUserById(Long userId) {
         User user = userRepository.findByIdAndActiveTrue(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));

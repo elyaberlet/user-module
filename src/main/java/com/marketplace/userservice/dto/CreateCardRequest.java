@@ -2,6 +2,7 @@ package com.marketplace.userservice.dto;
 
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Builder;
 import lombok.Data;
@@ -19,7 +20,7 @@ public class CreateCardRequest {
     @NotBlank
     private String holder;
 
-    @NotBlank
+    @NotNull
     @Future
     private LocalDate expirationDate;
 }
