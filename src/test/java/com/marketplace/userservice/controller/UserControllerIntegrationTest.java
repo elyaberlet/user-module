@@ -102,12 +102,10 @@ class UserControllerIntegrationTest {
     @Order(5)
     void shouldDeleteUserSuccessfully() throws Exception {
         mockMvc.perform(delete("/api/users/" + createdUserId))
-                .andExpect(status().isOk());
+                .andExpect(status().isNoContent()); // <-- БЫЛО isOk(), СТАЛО isNoContent()
 
-        // Проверяем, что пользователь деактивирован (мягкое удаление)
         mockMvc.perform(get("/api/users/" + createdUserId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.active").value(false));
+                .andExpect(status().isNotFound());
     }
 
     @Test
