@@ -28,9 +28,8 @@ public class UserService {
     private final UserMapper userMapper;
 
     @Transactional
-
-    public UserResponseDto createUser(CreateUserRequest requset) {
-        User user = userMapper.toEntity(requset);
+    public UserResponseDto createUser(CreateUserRequest request) { // Исправлена опечатка: requset -> request
+        User user = userMapper.toEntity(request);
         User saved = userRepository.save(user);
         return userMapper.toResponseDto(saved);
     }
@@ -49,7 +48,7 @@ public class UserService {
     }
 
     @Transactional
-    @CachePut(value = "users", key = "#id")
+    @CachePut(value = "users", key = "#userId") // <-- ИСПРАВЛЕНО: было #id, стало #userId
     public UserResponseDto updateUser(Long userId, UpdateUserRequest request) {
         User user = userRepository.findByIdAndActiveTrue(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
@@ -59,7 +58,7 @@ public class UserService {
     }
 
     @Transactional
-    @CacheEvict(value = "users", key = "#id")
+    @CacheEvict(value = "users", key = "#userId") // <-- ИСПРАВЛЕНО: было #id, стало #userId
     public void deleteUser(Long userId) {
         User user = userRepository.findByIdAndActiveTrue(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
@@ -67,7 +66,7 @@ public class UserService {
     }
 
     @Transactional
-    @CacheEvict(value = "users", key = "#id")
+    @CacheEvict(value = "users", key = "#userId") // <-- ИСПРАВЛЕНО: было #id, стало #userId
     public void updateUserStatus(Long userId, Boolean active) {
         userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
