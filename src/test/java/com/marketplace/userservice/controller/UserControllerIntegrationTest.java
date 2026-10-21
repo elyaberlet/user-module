@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT) // <-- ДОБАВИТЬ
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -37,7 +37,7 @@ class UserControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    private static Long createdUserId;
+    private Long createdUserId;
 
     @Test
     @Order(1)
@@ -104,9 +104,10 @@ class UserControllerIntegrationTest {
         mockMvc.perform(delete("/api/users/" + createdUserId))
                 .andExpect(status().isOk());
 
-        // Проверяем, что пользователь деактивирован
+        // Проверяем, что пользователь деактивирован (мягкое удаление)
         mockMvc.perform(get("/api/users/" + createdUserId))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(false));
     }
 
     @Test

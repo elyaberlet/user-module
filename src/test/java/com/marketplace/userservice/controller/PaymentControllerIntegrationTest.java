@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT) // <-- ДОБАВИТЬ
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -38,8 +38,8 @@ class PaymentControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    private static Long testUserId;
-    private static Long createdCardId;
+    private Long testUserId;
+    private Long createdCardId;
 
     @BeforeAll
     void setUp() throws Exception {
@@ -122,7 +122,6 @@ class PaymentControllerIntegrationTest {
     @Test
     @Order(5)
     void shouldEnforceCardLimit() throws Exception {
-        // Создаем еще 4 карты (итого 5)
         for (int i = 0; i < 4; i++) {
             CreateCardRequest request = CreateCardRequest.builder()
                     .number("123456789012345" + (i + 2))
@@ -155,8 +154,10 @@ class PaymentControllerIntegrationTest {
         mockMvc.perform(delete("/api/cards/" + createdCardId))
                 .andExpect(status().isNoContent());
 
+        // Проверяем, что карта деактивирована (мягкое удаление)
         mockMvc.perform(get("/api/cards/" + createdCardId))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(false));
     }
 
     @Test
