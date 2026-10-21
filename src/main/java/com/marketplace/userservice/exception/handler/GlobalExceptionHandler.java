@@ -31,7 +31,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         var errors = ex.getBindingResult().getFieldErrors().stream()
-                .collect(Collectors.toMap(FieldError::getField, FieldError::getDefaultMessage));
+                .collect(Collectors.toMap(
+                        FieldError::getField,
+                        FieldError::getDefaultMessage,
+                        (existingMessage, newMessage) -> existingMessage // <-- ДОБАВИТЬ ЭТУ СТРОКУ (разрешает дубликаты)
+                ));
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("timestamp", LocalDateTime.now(), "status", 400, "error", "Validation Failed", "messages", errors));
