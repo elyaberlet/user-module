@@ -3,22 +3,29 @@ package com.marketplace.userservice.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marketplace.userservice.dto.CreateUserRequest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -31,6 +38,24 @@ class UserControllerIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private WebApplicationContext context;
+
+    @BeforeEach
+    void setUpMockMvc() {
+        mockMvc = webAppContextSetup(context)
+                .defaultRequest(get("/")
+                        .with(jwt()
+                                .jwt(token -> token
+                                        .claim("role", "ADMIN")
+                                        .claim("user_id", 1L))
+                                .authorities(
+                                        new SimpleGrantedAuthority("ROLE_ADMIN")
+                                )))
+                .apply(springSecurity())
+                .build();
+    }
 
     private String createUserJson(String name, String email) throws Exception {
         return objectMapper.writeValueAsString(
@@ -195,4 +220,98 @@ class UserControllerIntegrationTest {
         mockMvc.perform(get("/api/users/{id}", userId))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void jwt_shouldContainAdminAuthority() {
+        var jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("test-token")
+                .header("alg", "none")
+                .claim("role", "ADMIN")
+                .claim("user_id", 1L)
+                .build();
+
+        var converter = new com.marketplace.userservice.config.SecurityConfig()
+                .jwtAuthenticationConverter();
+
+        var authentication = converter.convert(jwt);
+
+        assertNotNull(authentication);
+        assertTrue(
+                authentication.getAuthorities().stream()
+                        .anyMatch(authority ->
+                                authority.getAuthority().equals("ROLE_ADMIN")),
+                "JWT с role=ADMIN должен создавать authority ROLE_ADMIN"
+        );
+    }
+
+    @Test
+    void userRoleShouldNotAccessAdminUserList() throws Exception {
+        mockMvc.perform(get("/api/users")
+                        .with(jwt()
+                                .jwt(token -> token
+                                        .claim("role", "USER")
+                                        .claim("user_id", 1L))
+                                .authorities(
+                                        new SimpleGrantedAuthority("ROLE_USER")
+                                )))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void requestWithoutTokenShouldReturnUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/users")
+                        .with(anonymous()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void userRoleShouldNotCreateUser() throws Exception {
+        String requestBody = """
+            {
+                "name": "Alice",
+                "surname": "Smith",
+                "birthDate": "1995-05-15",
+                "email": "alice-security-test@example.com"
+            }
+            """;
+
+        mockMvc.perform(post("/api/users")
+                        .with(jwt()
+                                .jwt(token -> token
+                                        .claim("role", "USER")
+                                        .claim("user_id", 1L))
+                                .authorities(
+                                        new SimpleGrantedAuthority("ROLE_USER")
+                                ))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void userRoleShouldNotChangeUserStatus() throws Exception {
+        mockMvc.perform(patch("/api/users/{id}/status", 2L)
+                        .param("active", "false")
+                        .with(jwt()
+                                .jwt(token -> token
+                                        .claim("role", "USER")
+                                        .claim("user_id", 1L))
+                                .authorities(
+                                        new SimpleGrantedAuthority("ROLE_USER")
+                                )))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void userRoleShouldNotAccessAnotherUsersProfile() throws Exception {
+        mockMvc.perform(get("/api/users/{id}", 2L)
+                        .with(jwt()
+                                .jwt(token -> token
+                                        .claim("role", "USER")
+                                        .claim("user_id", 1L))
+                                .authorities(
+                                        new SimpleGrantedAuthority("ROLE_USER")
+                                )))
+                .andExpect(status().isForbidden());
+    }
+
 }

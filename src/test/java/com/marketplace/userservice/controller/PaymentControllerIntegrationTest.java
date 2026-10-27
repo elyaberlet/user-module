@@ -3,19 +3,25 @@ package com.marketplace.userservice.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marketplace.userservice.dto.CreateUserRequest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.time.LocalDate;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -28,6 +34,24 @@ class PaymentControllerIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private WebApplicationContext context;
+
+    @BeforeEach
+    void setUpMockMvc() {
+        mockMvc = webAppContextSetup(context)
+                .defaultRequest(get("/")
+                        .with(jwt()
+                                .jwt(token -> token
+                                        .claim("role", "ADMIN")
+                                        .claim("user_id", 1L))
+                                .authorities(
+                                        new SimpleGrantedAuthority("ROLE_ADMIN")
+                                )))
+                .apply(springSecurity())
+                .build();
+    }
 
     private long createUser() throws Exception {
         String userJson = objectMapper.writeValueAsString(
@@ -71,18 +95,17 @@ class PaymentControllerIntegrationTest {
         return objectMapper.readTree(response).get("id").asLong();
     }
 
-
     @Test
     void createCard_shouldReturn201AndLocation() throws Exception {
         long userId = createUser();
 
         String cardJson = """
-            {
-              "number": "1234567812345678",
-              "holder": "IVAN IVANOV",
-              "expirationDate": "%s"
-            }
-            """.formatted(LocalDate.now().plusYears(2));
+                {
+                  "number": "1234567812345678",
+                  "holder": "IVAN IVANOV",
+                  "expirationDate": "%s"
+                }
+                """.formatted(LocalDate.now().plusYears(2));
 
         String response = mockMvc.perform(post("/api/users/{userId}/cards", userId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -103,7 +126,6 @@ class PaymentControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(cardId));
     }
-
 
     @Test
     void createCard_shouldReturn400_whenRequestIsInvalid() throws Exception {
