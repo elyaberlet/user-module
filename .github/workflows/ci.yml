@@ -1,36 +1,29 @@
-name: CI/CD Pipeline
+  name: CI/CD Pipeline
 
-on:
-  push:
-    branches:
-      - develop
-      - feature/**
-  pull_request:
-    branches:
-      - develop
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: Push the Docker image to GHCR even from a branch other than develop
-        type: boolean
-        default: false
+  on:
+    push:
+      branches:
+        - 'features/**'
+    pull_request:
+      branches:
+        - main
+    workflow_dispatch:
+      inputs:
+        publish:
+          description: Push the Docker image to GHCR even from a branch other than develop
+          type: boolean
+          default: false
 
-permissions:
-  contents: read
-  packages: write
+  permissions:
+    contents: read
+    packages: write
 
-# A newer run of the same branch or pull request replaces the older one.
-# Runs on develop are never cancelled.
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/develop' }}
+  # A newer run of the same branch or pull request replaces the older one.
+  concurrency:
+    group: ci-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
 
-jobs:
-  build:
-    name: Build and test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+  jobs:
     build:
       name: Build and test
       runs-on: ubuntu-latest
@@ -46,95 +39,93 @@ jobs:
             --health-interval 10s
             --health-timeout 5s
             --health-retries 5
-    steps:
-      - name: Check out the code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Make mvnw executable
-        run: chmod +x ./mvnw
+      steps:
+        - name: Check out the code
+          uses: actions/checkout@v4
+          with:
+            fetch-depth: 0
 
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
+        - name: Make mvnw executable
+          run: chmod +x ./mvnw
 
-      - name: Build
-        run: ./mvnw -B -ntp -DskipTests package
+        - name: Set up Java 21
+          uses: actions/setup-java@v4
+          with:
+            distribution: temurin
+            java-version: '21'
+            cache: maven
 
-      - name: Test
-        run: ./mvnw -B -ntp test
+        - name: Build, test and verify
+          run: ./mvnw -B -ntp verify
 
-      - name: Code analysis (SonarQube Cloud)
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop'
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: >
-          ./mvnw -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:3.10.0.2594:sonar
-          -Dsonar.host.url=https://sonarcloud.io
-          -Dsonar.organization=elyaberlet
-          -Dsonar.projectKey=elyaberlet_user-module
-          -Dsonar.token=$SONAR_TOKEN
-          -Dsonar.qualitygate.wait=false
+        - name: Code analysis (SonarQube Cloud)
+          if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+          env:
+            SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          run: >
+            ./mvnw -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:3.10.0.2594:sonar
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.organization=elyaberlet
+            -Dsonar.projectKey=elyaberlet_user-module
+            -Dsonar.token=$SONAR_TOKEN
+            -Dsonar.qualitygate.wait=false
 
-      - name: Upload test and coverage reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: reports
-          path: |
-            target/surefire-reports/
-            target/site/jacoco/
-          if-no-files-found: warn
-          retention-days: 14
+        - name: Upload test and coverage reports
+          if: always()
+          uses: actions/upload-artifact@v4
+          with:
+            name: reports
+            path: |
+              target/surefire-reports/
+              target/site/jacoco/
+            if-no-files-found: warn
+            retention-days: 14
 
-  docker:
-    name: Docker image
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: write
-    env:
-      # The image is built on every run (this checks the Dockerfile) but pushed to GHCR
-      # only on pushes to develop, or on a manual run with "publish" ticked.
-      PUBLISH: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/develop') || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
-    steps:
-      - name: Check out the code
-        uses: actions/checkout@v4
+    docker:
+      name: Docker image
+      needs: build
+      runs-on: ubuntu-latest
+      timeout-minutes: 20
+      permissions:
+        contents: read
+        packages: write
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      env:
+        # The image is built on every run, but pushed only on a manual run with publish enabled.
+        PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
 
-      - name: Log in to GHCR
-        if: env.PUBLISH == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      steps:
+        - name: Check out the code
+          uses: actions/checkout@v4
 
-      # GHCR needs a lowercase image name; the action lowercases it.
-      - name: Image tags and labels
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=sha
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/develop' }}
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: ${{ env.PUBLISH == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        - name: Log in to GHCR
+          if: env.PUBLISH == 'true'
+          uses: docker/login-action@v3
+          with:
+            registry: ghcr.io
+            username: ${{ github.actor }}
+            password: ${{ secrets.GITHUB_TOKEN }}
+
+        # GHCR needs a lowercase image name; the action lowercases it.
+        - name: Image tags and labels
+          id: meta
+          uses: docker/metadata-action@v5
+          with:
+            images: ghcr.io/${{ github.repository }}
+            tags: |
+              type=sha
+
+        - name: Build and push
+          uses: docker/build-push-action@v5
+          with:
+            context: .
+            push: ${{ env.PUBLISH == 'true' }}
+            tags: ${{ steps.meta.outputs.tags }}
+            labels: ${{ steps.meta.outputs.labels }}
+            provenance: false
+            cache-from: type=gha
+            cache-to: type=gha,mode=max

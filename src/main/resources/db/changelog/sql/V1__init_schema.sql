@@ -19,7 +19,7 @@ CREATE TABLE payment_cards (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
     number VARCHAR(19) NOT NULL,
-    holder VARCHAR(255) NOT NULL,
+    holder VARCHAR(100) NOT NULL,
     expiration_date DATE NOT NULL,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -3,8 +3,8 @@ services:
     image: postgres:15
     environment:
       POSTGRES_DB: userdb
-      POSTGRES_USER: ${DB_USERNAME:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5433:5432"
     volumes:
@@ -17,7 +17,7 @@ services:
       start_period: 10s
 
   redis:
-    image: redis:7-aстоlpine
+    image: redis:7-alpine
     ports:
       - "6379:6379"
     healthcheck:
@@ -33,8 +33,8 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
       DB_URL: jdbc:postgresql://postgres:5432/userdb
-      DB_USERNAME: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:
