@@ -16,6 +16,23 @@ public class ResourceAccessService {
         this.cardRepository = cardRepository;
     }
 
+    public boolean ownsUser(Long userId) {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+            return false;
+        }
+
+        Object claim = jwtAuth.getToken().getClaim("user_id");
+
+        if (!(claim instanceof Number number)) {
+            return false;
+        }
+
+        return number.longValue() == userId;
+    }
+
     public boolean ownsCard(Long cardId) {
         Authentication authentication =
                 SecurityContextHolder.getContext().getAuthentication();

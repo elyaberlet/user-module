@@ -1,4 +1,3 @@
-
 package com.innowise.userservice.security;
 
 import com.innowise.userservice.repository.PaymentCardRepository;
@@ -47,6 +46,44 @@ class ResourceAccessServiceTest {
         SecurityContextHolder.clearContext();
     }
 
+    private void setJwtAuthenticationWithoutUserId() {
+        Jwt jwt = Jwt.withTokenValue("test-token")
+                .header("alg", "RS256")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .build();
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new JwtAuthenticationToken(jwt)
+        );
+    }
+
+    @Test
+    void ownsUser_shouldReturnTrue_whenUserIdMatchesJwtClaim() {
+        assertTrue(resourceAccessService.ownsUser(123L));
+    }
+
+    @Test
+    void ownsUser_shouldReturnFalse_whenUserIdDoesNotMatchJwtClaim() {
+        assertFalse(resourceAccessService.ownsUser(456L));
+    }
+
+    @Test
+    void ownsUser_shouldReturnFalse_whenAuthenticationIsNotJwt() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("user", "password")
+        );
+
+        assertFalse(resourceAccessService.ownsUser(123L));
+    }
+
+    @Test
+    void ownsUser_shouldReturnFalse_whenUserIdClaimIsMissing() {
+        setJwtAuthenticationWithoutUserId();
+
+        assertFalse(resourceAccessService.ownsUser(123L));
+    }
+
     @Test
     void ownsCard_shouldReturnTrue_whenCardBelongsToCurrentUser() {
         when(cardRepository.existsByIdAndUser_Id(10L, 123L))
@@ -72,6 +109,15 @@ class ResourceAccessServiceTest {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("user", "password")
         );
+
+        assertFalse(resourceAccessService.ownsCard(10L));
+
+        verifyNoInteractions(cardRepository);
+    }
+
+    @Test
+    void ownsCard_shouldReturnFalse_whenUserIdClaimIsMissing() {
+        setJwtAuthenticationWithoutUserId();
 
         assertFalse(resourceAccessService.ownsCard(10L));
 

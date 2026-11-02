@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.time.LocalDate;
@@ -71,6 +72,16 @@ class UserControllerIntegrationTest extends AbstractIntegrationTest {
                                 )))
                 .apply(springSecurity())
                 .build();
+    }
+
+    private static RequestPostProcessor userJwt(long userId) {
+        return jwt()
+                .jwt(token -> token
+                        .claim("role", "USER")
+                        .claim("user_id", userId))
+                .authorities(
+                        new SimpleGrantedAuthority("ROLE_USER")
+                );
     }
 
     @AfterEach
@@ -275,19 +286,51 @@ class UserControllerIntegrationTest extends AbstractIntegrationTest {
     void getMyProfile_shouldReturnUserWithCards() throws Exception {
         long userId = createUser("my-profile@example.com");
 
+        createCard(userId, "1111222233334444");
+
         mockMvc.perform(get("/api/users/me")
-                        .with(jwt()
-                                .jwt(token -> token
-                                        .claim("role", "USER")
-                                        .claim("user_id", userId))
-                                .authorities(
-                                        new SimpleGrantedAuthority("ROLE_USER")
-                                )))
+                        .with(userJwt(userId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(userId))
                 .andExpect(jsonPath("$.name").value("Ivan"))
                 .andExpect(jsonPath("$.email").value("my-profile@example.com"))
-                .andExpect(jsonPath("$.paymentCards").isArray());
+                .andExpect(jsonPath("$.paymentCards").isArray())
+                .andExpect(jsonPath("$.paymentCards.length()").value(1));
+    }
+
+    @Test
+    void userRoleShouldAccessOwnProfile() throws Exception {
+        long userId = createUser("own-profile@example.com");
+
+        mockMvc.perform(get("/api/users/{id}", userId)
+                        .with(userJwt(userId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(userId))
+                .andExpect(jsonPath("$.email").value("own-profile@example.com"));
+    }
+
+    @Test
+    void updateMyProfile_shouldReturnUpdatedUser() throws Exception {
+        long userId = createUser("my-update@example.com");
+
+        String updateJson = """
+                {
+                  "name": "Petr",
+                  "surname": "Petrov",
+                  "birthDate": "1994-03-15",
+                  "email": "my-updated@example.com"
+                }
+                """;
+
+        mockMvc.perform(put("/api/users/me")
+                        .with(userJwt(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(userId))
+                .andExpect(jsonPath("$.name").value("Petr"))
+                .andExpect(jsonPath("$.surname").value("Petrov"))
+                .andExpect(jsonPath("$.email").value("my-updated@example.com"));
     }
 
     @Test
@@ -440,13 +483,7 @@ class UserControllerIntegrationTest extends AbstractIntegrationTest {
     @Test
     void userRoleShouldNotAccessAdminUserList() throws Exception {
         mockMvc.perform(get("/api/users")
-                        .with(jwt()
-                                .jwt(token -> token
-                                        .claim("role", "USER")
-                                        .claim("user_id", 1L))
-                                .authorities(
-                                        new SimpleGrantedAuthority("ROLE_USER")
-                                )))
+                        .with(userJwt(1L)))
                 .andExpect(status().isForbidden());
     }
 
@@ -469,13 +506,7 @@ class UserControllerIntegrationTest extends AbstractIntegrationTest {
                 """;
 
         mockMvc.perform(post("/api/users")
-                        .with(jwt()
-                                .jwt(token -> token
-                                        .claim("role", "USER")
-                                        .claim("user_id", 1L))
-                                .authorities(
-                                        new SimpleGrantedAuthority("ROLE_USER")
-                                ))
+                        .with(userJwt(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isForbidden());
@@ -483,28 +514,42 @@ class UserControllerIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void userRoleShouldNotChangeUserStatus() throws Exception {
-        mockMvc.perform(patch("/api/users/{id}/status", 2L)
+        long anotherUserId = createUser("status-security@example.com");
+
+        mockMvc.perform(patch("/api/users/{id}/status", anotherUserId)
                         .param("active", "false")
-                        .with(jwt()
-                                .jwt(token -> token
-                                        .claim("role", "USER")
-                                        .claim("user_id", 1L))
-                                .authorities(
-                                        new SimpleGrantedAuthority("ROLE_USER")
-                                )))
+                        .with(userJwt(1L)))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void userRoleShouldNotAccessAnotherUsersProfile() throws Exception {
-        mockMvc.perform(get("/api/users/{id}", 2L)
-                        .with(jwt()
-                                .jwt(token -> token
-                                        .claim("role", "USER")
-                                        .claim("user_id", 1L))
-                                .authorities(
-                                        new SimpleGrantedAuthority("ROLE_USER")
-                                )))
+        long firstUserId = createUser("first-security@example.com");
+        long secondUserId = createUser("second-security@example.com");
+
+        mockMvc.perform(get("/api/users/{id}", secondUserId)
+                        .with(userJwt(firstUserId)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void userRoleShouldNotUpdateAnotherUsersProfile() throws Exception {
+        long firstUserId = createUser("first-update-security@example.com");
+        long secondUserId = createUser("second-update-security@example.com");
+
+        String updateJson = """
+                {
+                  "name": "Hacker",
+                  "surname": "Hacker",
+                  "birthDate": "1994-03-15",
+                  "email": "hacker@example.com"
+                }
+                """;
+
+        mockMvc.perform(put("/api/users/{id}", secondUserId)
+                        .with(userJwt(firstUserId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateJson))
                 .andExpect(status().isForbidden());
     }
 }

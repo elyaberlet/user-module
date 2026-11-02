@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.time.LocalDate;
@@ -65,6 +66,16 @@ class PaymentControllerIntegrationTest extends AbstractIntegrationTest {
                 .build();
     }
 
+    private static RequestPostProcessor userJwt(long userId) {
+        return jwt()
+                .jwt(token -> token
+                        .claim("role", "USER")
+                        .claim("user_id", userId))
+                .authorities(
+                        new SimpleGrantedAuthority("ROLE_USER")
+                );
+    }
+
     private long createUser() throws Exception {
         String userJson = objectMapper.writeValueAsString(
                 new CreateUserRequest(
@@ -110,6 +121,16 @@ class PaymentControllerIntegrationTest extends AbstractIntegrationTest {
         return objectMapper.readTree(response).get("id").asLong();
     }
 
+    private String createCardJson(String number) {
+        return """
+                {
+                  "number": "%s",
+                  "holder": "IVAN IVANOV",
+                  "expirationDate": "%s"
+                }
+                """.formatted(number, LocalDate.now().plusYears(2));
+    }
+
     @AfterEach
     void cleanUp() {
         for (Long userId : createdUserIds) {
@@ -138,13 +159,7 @@ class PaymentControllerIntegrationTest extends AbstractIntegrationTest {
     void createCard_shouldReturn201AndLocation() throws Exception {
         long userId = createUser();
 
-        String cardJson = """
-                {
-                  "number": "1234567812345678",
-                  "holder": "IVAN IVANOV",
-                  "expirationDate": "%s"
-                }
-                """.formatted(LocalDate.now().plusYears(2));
+        String cardJson = createCardJson("1234567812345678");
 
         String response = mockMvc.perform(post("/api/users/{userId}/cards", userId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -195,13 +210,7 @@ class PaymentControllerIntegrationTest extends AbstractIntegrationTest {
         createCard(userId, "4444555566667777");
         createCard(userId, "5555666677778888");
 
-        String sixthCardJson = """
-                {
-                  "number": "6666777788889999",
-                  "holder": "IVAN IVANOV",
-                  "expirationDate": "%s"
-                }
-                """.formatted(LocalDate.now().plusYears(2));
+        String sixthCardJson = createCardJson("6666777788889999");
 
         mockMvc.perform(post("/api/users/{userId}/cards", userId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -287,5 +296,162 @@ class PaymentControllerIntegrationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/cards/{cardId}", cardId))
                 .andExpect(status().isNotFound());
+    }
+
+    // USER: доступ к собственным картам
+
+    @Test
+    void userRoleShouldAccessOwnCards() throws Exception {
+        long userId = createUser();
+
+        createCard(userId, "1111222233334444");
+        createCard(userId, "2222333344445555");
+
+        mockMvc.perform(get("/api/users/{userId}/cards", userId)
+                        .with(userJwt(userId))
+                        .param("page", "0")
+                        .param("size", "10")
+                        .param("sort", "id,asc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @Test
+    void userRoleShouldCreateCardForSelf() throws Exception {
+        long userId = createUser();
+
+        mockMvc.perform(post("/api/users/{userId}/cards", userId)
+                        .with(userJwt(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createCardJson("1234567812345678")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.number").value("1234567812345678"));
+    }
+
+    @Test
+    void userRoleShouldReadOwnCard() throws Exception {
+        long userId = createUser();
+        long cardId = createCard(userId, "1111222233334444");
+
+        mockMvc.perform(get("/api/cards/{cardId}", cardId)
+                        .with(userJwt(userId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(cardId))
+                .andExpect(jsonPath("$.number").value("1111222233334444"));
+    }
+
+    @Test
+    void userRoleShouldUpdateOwnCard() throws Exception {
+        long userId = createUser();
+        long cardId = createCard(userId, "1111222233334444");
+
+        String updateJson = """
+                {
+                  "number": "9999888877776666",
+                  "holder": "USER UPDATED",
+                  "expirationDate": "%s"
+                }
+                """.formatted(LocalDate.now().plusYears(3));
+
+        mockMvc.perform(put("/api/cards/{cardId}", cardId)
+                        .with(userJwt(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(cardId))
+                .andExpect(jsonPath("$.number").value("9999888877776666"))
+                .andExpect(jsonPath("$.holder").value("USER UPDATED"));
+    }
+
+    @Test
+    void userRoleShouldDeleteOwnCard() throws Exception {
+        long userId = createUser();
+        long cardId = createCard(userId, "1111222233334444");
+
+        mockMvc.perform(delete("/api/cards/{cardId}", cardId)
+                        .with(userJwt(userId)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/cards/{cardId}", cardId))
+                .andExpect(status().isNotFound());
+    }
+
+    // USER: запрет доступа к картам другого пользователя
+
+    @Test
+    void userRoleShouldNotAccessAnotherUsersCards() throws Exception {
+        long ownerId = createUser();
+        long anotherUserId = createUser();
+
+        createCard(anotherUserId, "2222333344445555");
+
+        mockMvc.perform(get("/api/users/{userId}/cards", anotherUserId)
+                        .with(userJwt(ownerId)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void userRoleShouldNotCreateCardForAnotherUser() throws Exception {
+        long ownerId = createUser();
+        long anotherUserId = createUser();
+
+        mockMvc.perform(post("/api/users/{userId}/cards", anotherUserId)
+                        .with(userJwt(ownerId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createCardJson("1234567812345678")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void userRoleShouldNotReadAnotherUsersCard() throws Exception {
+        long ownerId = createUser();
+        long anotherUserId = createUser();
+        long cardId = createCard(anotherUserId, "2222333344445555");
+
+        mockMvc.perform(get("/api/cards/{cardId}", cardId)
+                        .with(userJwt(ownerId)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void userRoleShouldNotUpdateAnotherUsersCard() throws Exception {
+        long ownerId = createUser();
+        long anotherUserId = createUser();
+        long cardId = createCard(anotherUserId, "2222333344445555");
+
+        String updateJson = """
+                {
+                  "number": "9999888877776666",
+                  "holder": "HACKER",
+                  "expirationDate": "%s"
+                }
+                """.formatted(LocalDate.now().plusYears(3));
+
+        mockMvc.perform(put("/api/cards/{cardId}", cardId)
+                        .with(userJwt(ownerId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateJson))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void userRoleShouldNotDeleteAnotherUsersCard() throws Exception {
+        long ownerId = createUser();
+        long anotherUserId = createUser();
+        long cardId = createCard(anotherUserId, "2222333344445555");
+
+        mockMvc.perform(delete("/api/cards/{cardId}", cardId)
+                        .with(userJwt(ownerId)))
+                .andExpect(status().isForbidden());
+
+        Integer remainingCards = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM payment_cards WHERE id = ?",
+                Integer.class,
+                cardId
+        );
+
+        assertEquals(1, remainingCards);
     }
 }

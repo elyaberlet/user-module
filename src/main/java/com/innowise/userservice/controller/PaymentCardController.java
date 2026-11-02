@@ -1,3 +1,4 @@
+
 package com.innowise.userservice.controller;
 
 import com.innowise.userservice.dto.CardResponseDto;
@@ -25,7 +26,7 @@ public class PaymentCardController {
     private final CardService cardService;
 
     @PostMapping("/api/users/{userId}/cards")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or @resourceAccessService.ownsUser(#userId)")
     public ResponseEntity<CardResponseDto> createCard(
             @PathVariable Long userId,
             @Valid @RequestBody CreateCardRequest request) {
@@ -41,7 +42,7 @@ public class PaymentCardController {
     }
 
     @GetMapping("/api/users/{userId}/cards")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or @resourceAccessService.ownsUser(#userId)")
     public ResponseEntity<Page<CardResponseDto>> getCards(
             @PathVariable Long userId,
             @PageableDefault(size = 20, sort = "id") Pageable pageable) {
@@ -53,7 +54,6 @@ public class PaymentCardController {
     @GetMapping("/api/cards/{cardId}")
     @PreAuthorize("hasRole('ADMIN') or @resourceAccessService.ownsCard(#cardId)")
     public ResponseEntity<CardResponseDto> getCard(@PathVariable Long cardId) {
-
         return ResponseEntity.ok(cardService.getCardById(cardId));
     }
 

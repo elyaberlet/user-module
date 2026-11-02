@@ -1,3 +1,4 @@
+
 package com.innowise.userservice.controller;
 
 import com.innowise.userservice.dto.CreateUserRequest;
@@ -36,7 +37,7 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SERVICE')")
     public ResponseEntity<UserResponseDto> createUser(
             @Valid @RequestBody CreateUserRequest request) {
 
@@ -63,13 +64,13 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or @resourceAccessService.ownsUser(#id)")
     public ResponseEntity<UserListResponseDto> getUser(@PathVariable Long id) {
         return ResponseEntity.ok(userService.getUserById(id));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or @resourceAccessService.ownsUser(#id)")
     public ResponseEntity<UserResponseDto> updateUser(
             @PathVariable Long id,
             @Valid @RequestBody UpdateUserRequest request) {
@@ -78,7 +79,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SERVICE')")
     public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
         return ResponseEntity.noContent().build();
